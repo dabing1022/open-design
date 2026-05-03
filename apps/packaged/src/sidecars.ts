@@ -22,7 +22,7 @@ import {
   resolveAppIpcPath,
   type SidecarRuntimeContext,
 } from "@open-design/sidecar";
-import { createProcessStampArgs, stopProcesses, waitForProcessExit } from "@open-design/platform";
+import { collectNvmFnmBins, createProcessStampArgs, stopProcesses, waitForProcessExit } from "@open-design/platform";
 
 import type { PackagedNamespacePaths } from "./paths.js";
 
@@ -102,6 +102,8 @@ function resolvePackagedPathEnv(basePath = process.env.PATH ?? ""): string {
     join(home, ".opencode", "bin"),
     join(home, ".cargo", "bin"),
     join(home, ".bun", "bin"),
+    join(home, ".volta", "bin"),
+    ...collectNvmFnmBins(home),
     "/opt/homebrew/bin",
     "/usr/local/bin",
     "/usr/bin",

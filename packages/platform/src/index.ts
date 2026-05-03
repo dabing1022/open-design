@@ -1,5 +1,8 @@
 import { execFile, spawn, type ChildProcess, type StdioOptions } from "node:child_process";
+import { existsSync, readdirSync } from "node:fs";
 import { readFile } from "node:fs/promises";
+import { homedir } from "node:os";
+import { join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 
 export type CommandInvocation = {
@@ -393,4 +396,30 @@ export async function readLogTail(filePath: string, maxLines = 80): Promise<stri
   } catch {
     return [];
   }
+}
+
+function existingDirsUnder(root: string, segments: string[] = []): string[] {
+  const dirs: string[] = [];
+  try {
+    const entries = readdirSync(root, { withFileTypes: true });
+    for (const entry of entries) {
+      if (!entry.isDirectory()) continue;
+      const full = join(root, entry.name, ...segments);
+      if (existsSync(full)) dirs.push(full);
+    }
+  } catch {
+    // ignore
+  }
+  return dirs;
+}
+
+// Scan per-user Node version-manager bin directories so packaged builds
+// (DMG / AppImage / NSIS) can discover npm-global agent CLIs installed
+// under nvm / fnm / mise even though GUI apps don't inherit shell PATH.
+export function collectNvmFnmBins(home: string = homedir()): string[] {
+  return [
+    ...existingDirsUnder(join(home, ".nvm", "versions", "node"), ["bin"]),
+    ...existingDirsUnder(join(home, ".local", "share", "fnm", "node-versions"), ["installation", "bin"]),
+    ...existingDirsUnder(join(home, ".local", "share", "mise", "installs", "node"), ["bin"]),
+  ];
 }
