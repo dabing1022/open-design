@@ -136,6 +136,47 @@ export async function buildProjectArchive(projectsRoot, projectId, root) {
   return { buffer, baseName: archiveBaseName };
 }
 
+export async function buildBatchArchive(projectsRoot, projectId, fileNames) {
+  const projectRoot = projectDir(projectsRoot, projectId);
+  const zip = new JSZip();
+  let packed = 0;
+
+  for (const name of fileNames) {
+    let filePath;
+    try {
+      filePath = resolveSafe(projectRoot, name);
+    } catch {
+      continue;
+    }
+    try {
+      const st = await stat(filePath);
+      if (!st.isFile()) continue;
+      const buf = await readFile(filePath);
+      zip.file(name, buf, {
+        date: new Date(st.mtimeMs),
+        binary: true,
+      });
+      packed += 1;
+    } catch (err) {
+      if (err && err.code === 'ENOENT') continue;
+      throw err;
+    }
+  }
+
+  if (packed === 0) {
+    const err = new Error('no files could be packed');
+    err.code = 'ENOENT';
+    throw err;
+  }
+
+  const buffer = await zip.generateAsync({
+    type: 'nodebuffer',
+    compression: 'DEFLATE',
+    compressionOptions: { level: 6 },
+  });
+  return { buffer, baseName: '' };
+}
+
 async function collectArchiveEntries(dir, relDir, out) {
   let entries = [];
   try {
