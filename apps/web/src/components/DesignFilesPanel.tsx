@@ -76,6 +76,23 @@ export function DesignFilesPanel({
     return groups;
   }, [files]);
 
+  // Prune stale selections when the file list or project changes.
+  useEffect(() => {
+    setSelected((prev) => {
+      if (prev.size === 0) return prev;
+      const names = new Set(files.map((f) => f.name));
+      const next = new Set(prev);
+      let changed = false;
+      for (const n of next) {
+        if (!names.has(n)) {
+          next.delete(n);
+          changed = true;
+        }
+      }
+      return changed ? next : prev;
+    });
+  }, [files, projectId]);
+
   const previewFile = useMemo(
     () => files.find((f) => f.name === preview) ?? null,
     [preview, files],

@@ -7,7 +7,7 @@
 // All paths flowing in from HTTP handlers are validated against the project
 // directory to prevent path traversal — see resolveSafe().
 
-import { mkdir, readdir, readFile, rm, stat, unlink, writeFile } from 'node:fs/promises';
+import { lstat, mkdir, readdir, readFile, rm, stat, unlink, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import JSZip from 'jszip';
 import {
@@ -140,32 +140,63 @@ export async function buildBatchArchive(projectsRoot, projectId, fileNames) {
   const projectRoot = projectDir(projectsRoot, projectId);
   const zip = new JSZip();
   let packed = 0;
+  const rejected = [];
 
   for (const name of fileNames) {
+    // Validate the name up-front; reject instead of silently skipping
+    // so callers get clear feedback on bad input.
     let filePath;
     try {
       filePath = resolveSafe(projectRoot, name);
-    } catch {
+    } catch (err) {
+      rejected.push({ name, reason: `invalid path: ${err?.message || err}` });
       continue;
     }
+
+    // Mirror the visible-file allowlist used by listFiles / collectFiles:
+    // dotfiles, .artifact.json sidecars, and symlinks are excluded.
+    const base = path.basename(filePath);
+    if (base.startsWith('.')) {
+      rejected.push({ name, reason: 'dotfiles are not eligible for archive' });
+      continue;
+    }
+    if (base.endsWith('.artifact.json')) {
+      rejected.push({ name, reason: 'artifact sidecars are not eligible for archive' });
+      continue;
+    }
+
+    let st;
     try {
-      const st = await stat(filePath);
-      if (!st.isFile()) continue;
-      const buf = await readFile(filePath);
-      zip.file(name, buf, {
-        date: new Date(st.mtimeMs),
-        binary: true,
-      });
-      packed += 1;
+      st = await lstat(filePath);
     } catch (err) {
-      if (err && err.code === 'ENOENT') continue;
+      if (err && err.code === 'ENOENT') {
+        rejected.push({ name, reason: 'file not found' });
+        continue;
+      }
       throw err;
     }
+
+    if (st.isSymbolicLink()) {
+      rejected.push({ name, reason: 'symlinks are not eligible for archive' });
+      continue;
+    }
+    if (!st.isFile()) {
+      rejected.push({ name, reason: 'not a regular file' });
+      continue;
+    }
+
+    const buf = await readFile(filePath);
+    zip.file(name, buf, {
+      date: new Date(st.mtimeMs),
+      binary: true,
+    });
+    packed += 1;
   }
 
   if (packed === 0) {
     const err = new Error('no files could be packed');
     err.code = 'ENOENT';
+    err.rejected = rejected;
     throw err;
   }
 
@@ -174,7 +205,7 @@ export async function buildBatchArchive(projectsRoot, projectId, fileNames) {
     compression: 'DEFLATE',
     compressionOptions: { level: 6 },
   });
-  return { buffer, baseName: '' };
+  return { buffer, baseName: '', rejected };
 }
 
 async function collectArchiveEntries(dir, relDir, out) {
