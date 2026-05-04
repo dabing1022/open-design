@@ -76,17 +76,10 @@ export function DesignFilesPanel({
     return groups;
   }, [files]);
 
-  // Clear selection on project switch to prevent cross-project leaks
-  // (e.g. index.html selected in project A persisting into project B).
-  const prevProjectRef = useRef<string | null>(null);
-  useEffect(() => {
-    if (prevProjectRef.current !== null && prevProjectRef.current !== projectId) {
-      setSelected(new Set());
-    }
-    prevProjectRef.current = projectId;
-  }, [projectId]);
-
-  // Prune selections that no longer exist in the current file list.
+  // Prune selections that no longer exist in the current file list
+  // (e.g. after a refresh or delete within the same project).
+  // Cross-project leaks are handled by the parent remounting this
+  // component via key={projectId}.
   useEffect(() => {
     setSelected((prev) => {
       if (prev.size === 0) return prev;
